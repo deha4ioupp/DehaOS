@@ -1,0 +1,253 @@
+name: DehaOS ISO Builder
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-latest
+    container:
+      image: debian:bookworm
+      options: --privileged
+
+    steps:
+      - name: 1. Derleme Ortamini ve Gerekli Araclari Hazirla
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            live-build debootstrap squashfs-tools xorriso isolinux syslinux-efi \
+            grub-pc-bin grub-efi-amd64-bin mtools dosfstools librsvg2-bin \
+            curl wget git ca-certificates
+
+      - name: 2. DehaOS Live-Build Yapilandirmasini Olustur
+        run: |
+          mkdir -p /build/dehaos && cd /build/dehaos
+          lb config noauto \
+            --mode debian \
+            --distribution bookworm \
+            --debian-installer live \
+            --architectures amd64 \
+            --archive-areas "main contrib non-free non-free-firmware" \
+            --backports true \
+            --bootappend-live "boot=live components locales=tr_TR.UTF-8 keyboard-layouts=tr quiet splash username=deha hostname=dehaos" \
+            --iso-application "DehaOS Linux" \
+            --iso-publisher "DehaOS Project" \
+            --iso-volume "DehaOS-Live"
+
+      - name: 3. Masaustu, Gizlilik, Ofis ve Oyun Paketlerini Tanimla
+        run: |
+          cd /build/dehaos
+          cat << 'EOF' > config/package-lists/dehaos.list.chroot
+          # Sistem ve Dual-Boot Kurulum Araclari
+          calamares
+          calamares-settings-debian
+          os-prober
+          ntfs-3g
+          exfatprogs
+          dosfstools
+          partitionmanager
+          amd64-microcode
+          firmware-amd-graphics
+          firmware-linux
+          firmware-linux-nonfree
+          firmware-misc-nonfree
+
+          # 1A - KDE Plasma Masaustu Ortami
+          kde-plasma-desktop
+          plasma-nm
+          plasma-pa
+          plasma-workspace-wayland
+          sddm
+          sddm-theme-breeze
+          dolphin
+          konsole
+          ark
+          spectacle
+          gwenview
+          okular
+          kate
+          kcalc
+
+          # 3C & 4B - Tarayici ve LibreOffice
+          firefox-esr
+          firefox-esr-l10n-tr
+          libreoffice
+          libreoffice-l10n-tr
+          libreoffice-kf5
+          libreoffice-plasma
+
+          # 5B - Sikilastirilmis Gizlilik ve Guvenlik
+          ufw
+          gufw
+          bleachbit
+          keepassxc
+
+          # 6A, 6B, 6C - Magaza, Yedekleme ve Multimedya
+          flatpak
+          plasma-discover
+          plasma-discover-backend-flatpak
+          timeshift
+          vlc
+          ffmpeg
+          gstreamer1.0-plugins-base
+          gstreamer1.0-plugins-good
+          gstreamer1.0-plugins-bad
+          gstreamer1.0-plugins-ugly
+          gstreamer1.0-libav
+          libavcodec-extra
+
+          # 6D - AMD Vulkan ve Oyun Altyapisi
+          mesa-vulkan-drivers
+          libvulkan1
+          vulkan-tools
+          gamemode
+          EOF
+
+      - name: 4. Ozel Duvar Kagidi (Mor-Altin-Turuncu-Beyaz KDE Tarzi) Uret
+        run: |
+          cd /build/dehaos
+          mkdir -p config/includes.chroot/usr/share/wallpapers/DehaOS/contents/images
+          cat << 'EOF' > /tmp/dehaos-wallpaper.svg
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3840 2160" width="3840" height="2160">
+            <defs>
+              <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#1a0633"/>
+                <stop offset="45%" stop-color="#4a1575"/>
+                <stop offset="80%" stop-color="#d9531e"/>
+                <stop offset="100%" stop-color="#ffb703"/>
+              </linearGradient>
+              <linearGradient id="polyGold" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#ff9e00" stop-opacity="0.85"/>
+                <stop offset="100%" stop-color="#ffd166" stop-opacity="0.95"/>
+              </linearGradient>
+              <linearGradient id="polyPurple" x1="0%" y1="100%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#240046" stop-opacity="0.9"/>
+                <stop offset="100%" stop-color="#7b2cbf" stop-opacity="0.75"/>
+              </linearGradient>
+              <linearGradient id="polyWhite" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#ffffff" stop-opacity="0.92"/>
+                <stop offset="100%" stop-color="#f8edeb" stop-opacity="0.35"/>
+              </linearGradient>
+            </defs>
+            <rect width="3840" height="2160" fill="url(#bg)"/>
+            <!-- KDE Plasma Geometric Facets -->
+            <polygon points="0,2160 0,950 1450,1550 1100,2160" fill="url(#polyPurple)"/>
+            <polygon points="1100,2160 1450,1550 2650,1200 2900,2160" fill="#5a189a" opacity="0.65"/>
+            <polygon points="1450,1550 2200,450 3200,950 2650,1200" fill="url(#polyGold)"/>
+            <polygon points="2200,450 2850,180 3550,620 3200,950" fill="#fb8500" opacity="0.85"/>
+            <polygon points="1850,965 2200,450 2650,1200" fill="url(#polyWhite)"/>
+            <polygon points="2650,1200 3200,950 3840,1350 3840,2160 2900,2160" fill="#3c096c" opacity="0.8"/>
+            <polygon points="650,1220 1450,1550 1850,965 1150,680" fill="#ff6d00" opacity="0.75"/>
+            <polygon points="1150,680 1850,965 2200,450 1580,240" fill="url(#polyWhite)" opacity="0.6"/>
+            <circle cx="2950" cy="480" r="140" fill="#ffffff" opacity="0.85"/>
+          </svg>
+          EOF
+          rsvg-convert -w 3840 -h 2160 /tmp/dehaos-wallpaper.svg -o config/includes.chroot/usr/share/wallpapers/DehaOS/contents/images/3840x2160.png
+
+      - name: 5. Gizlilik, Oyun (Steam/Epic) ve KDE Ayarlarini Entegre Et
+        run: |
+          cd /build/dehaos
+          # 3C: Firefox ESR uBlock Origin ve Sifir Telemetri Politikasi
+          mkdir -p config/includes.chroot/etc/firefox-esr/policies
+          cat << 'EOF' > config/includes.chroot/etc/firefox-esr/policies/policies.json
+          {
+            "policies": {
+              "DisableTelemetry": true,
+              "DisableFirefoxStudies": true,
+              "DisablePocket": true,
+              "DontCheckDefaultBrowser": true,
+              "EnableTrackingProtection": {
+                "Value": true,
+                "Locked": false,
+                "Cryptomining": true,
+                "Fingerprinting": true
+              },
+              "ExtensionSettings": {
+                "uBlock0@raymondhill.net": {
+                  "installation_mode": "force_installed",
+                  "install_url": "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi"
+                }
+              }
+            }
+          }
+          EOF
+
+          # 5B: Otomatik MAC Adresi Gizleme ve Quad9 Gizlilik DNS'i
+          mkdir -p config/includes.chroot/etc/NetworkManager/conf.d
+          cat << 'EOF' > config/includes.chroot/etc/NetworkManager/conf.d/90-dehaos-privacy.conf
+          [device]
+          wifi.scan-rand-mac-address=yes
+
+          [connection]
+          wifi.cloned-mac-address=random
+          ethernet.cloned-mac-address=random
+          ipv6.ip6-privacy=2
+          EOF
+
+          # Sistem Icerisinde Calisacak Otomatik Kurulum Kancasi (Hook)
+          mkdir -p config/hooks/normal
+          cat << 'EOF' > config/hooks/normal/9999-dehaos-setup.hook.chroot
+          #!/bin/sh
+          set -e
+
+          # 2A: Backports Guncel Cekirdek Kurulumu (AMD Ryzen 7 Icin)
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -t bookworm-backports linux-image-amd64 || true
+
+          # 6D: 32-bit Mimarisi, Steam ve Epic Games (Heroic Launcher)
+          dpkg --add-architecture i386
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            steam-installer mesa-vulkan-drivers:i386 libgl1-mesa-dri:i386 || true
+
+          # Stacer ve Heroic Games Launcher (Epic Games) .deb Kurulumu
+          DEBIAN_FRONTEND=noninteractive apt-get install -y stacer || true
+          HEROIC_URL=$(curl -s https://api.github.com/repos/Heroic-Games-Launcher/HeroicGamesLauncher/releases/latest | grep "browser_download_url.*amd64.deb" | cut -d '"' -f 4 | head -n 1)
+          if [ -n "$HEROIC_URL" ]; then
+            wget -q -O /tmp/heroic.deb "$HEROIC_URL"
+            DEBIAN_FRONTEND=noninteractive apt-get install -y /tmp/heroic.deb || true
+            rm -f /tmp/heroic.deb
+          fi
+
+          # 6A: Flathub Magaza Baglantisi
+          flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo || true
+
+          # 5B: Guvenlik Duvarini (UFW) Varsayilan Olarak Etkinlestir
+          ufw default deny incoming || true
+          ufw default allow outgoing || true
+          ufw --force enable || true
+
+          # DehaOS Duvar Kagidini Varsayilan KDE Duvar Kagidi Yap
+          if [ -f /usr/share/wallpapers/DehaOS/contents/images/3840x2160.png ]; then
+            mkdir -p /usr/share/wallpapers/Next/contents/images
+            cp -f /usr/share/wallpapers/DehaOS/contents/images/3840x2160.png /usr/share/wallpapers/Next/contents/images/5120x2880.png || true
+            cp -f /usr/share/wallpapers/DehaOS/contents/images/3840x2160.png /usr/share/wallpapers/Next/contents/images/3840x2160.png || true
+            cp -f /usr/share/wallpapers/DehaOS/contents/images/3840x2160.png /usr/share/wallpapers/Next/contents/images/1920x1080.png || true
+          fi
+
+          # Masaustune Kurulum, Steam ve Epic Games Kisayollarini Ekle
+          mkdir -p /etc/skel/Desktop
+          for app in /usr/share/applications/calamares.desktop /usr/share/applications/steam.desktop /usr/share/applications/heroic.desktop; do
+            if [ -f "$app" ]; then
+              cp "$app" /etc/skel/Desktop/
+              chmod +x /etc/skel/Desktop/*.desktop
+            fi
+          done
+
+          # DehaOS Isimlendirme
+          sed -i 's/PRETTY_NAME=.*/PRETTY_NAME="DehaOS 1.0 (Bookworm)"/' /etc/os-release || true
+          EOF
+          chmod +x config/hooks/normal/9999-dehaos-setup.hook.chroot
+
+      - name: 6. DehaOS ISO Dosyasini Derle
+        run: |
+          cd /build/dehaos
+          lb build
+          mv live-image-amd64.hybrid.iso /build/DehaOS-amd64.iso
+
+      - name: 7. Hazir ISO Dosyasini Indirmeye Sun
+        uses: actions/upload-artifact@v4
+        with:
+          name: DehaOS-ISO-Kurulum-Dosyasi
+          path: /build/DehaOS-amd64.iso
+          retention-days: 7
