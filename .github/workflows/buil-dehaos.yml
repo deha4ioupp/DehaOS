@@ -1,6 +1,7 @@
 name: DehaOS ISO Builder
 
 on:
+  push:
   workflow_dispatch:
 
 jobs:
@@ -25,10 +26,9 @@ jobs:
           lb config noauto \
             --mode debian \
             --distribution bookworm \
-            --debian-installer live \
+            --debian-installer none \
             --architectures amd64 \
             --archive-areas "main contrib non-free non-free-firmware" \
-            --backports true \
             --bootappend-live "boot=live components locales=tr_TR.UTF-8 keyboard-layouts=tr quiet splash username=deha hostname=dehaos" \
             --iso-application "DehaOS Linux" \
             --iso-publisher "DehaOS Project" \
@@ -38,7 +38,12 @@ jobs:
         run: |
           cd /build/dehaos
           cat << 'EOF' > config/package-lists/dehaos.list.chroot
-          # Sistem ve Dual-Boot Kurulum Araclari
+          live-boot
+          live-config
+          live-config-systemd
+          sudo
+          user-setup
+          locales
           calamares
           calamares-settings-debian
           os-prober
@@ -51,8 +56,6 @@ jobs:
           firmware-linux
           firmware-linux-nonfree
           firmware-misc-nonfree
-
-          # 1A - KDE Plasma Masaustu Ortami
           kde-plasma-desktop
           plasma-nm
           plasma-pa
@@ -62,27 +65,21 @@ jobs:
           dolphin
           konsole
           ark
-          spectacle
+          kde-spectacle
           gwenview
           okular
           kate
           kcalc
-
-          # 3C & 4B - Tarayici ve LibreOffice
           firefox-esr
           firefox-esr-l10n-tr
           libreoffice
           libreoffice-l10n-tr
           libreoffice-kf5
           libreoffice-plasma
-
-          # 5B - Sikilastirilmis Gizlilik ve Guvenlik
           ufw
           gufw
           bleachbit
           keepassxc
-
-          # 6A, 6B, 6C - Magaza, Yedekleme ve Multimedya
           flatpak
           plasma-discover
           plasma-discover-backend-flatpak
@@ -95,8 +92,6 @@ jobs:
           gstreamer1.0-plugins-ugly
           gstreamer1.0-libav
           libavcodec-extra
-
-          # 6D - AMD Vulkan ve Oyun Altyapisi
           mesa-vulkan-drivers
           libvulkan1
           vulkan-tools
@@ -130,7 +125,6 @@ jobs:
               </linearGradient>
             </defs>
             <rect width="3840" height="2160" fill="url(#bg)"/>
-            <!-- KDE Plasma Geometric Facets -->
             <polygon points="0,2160 0,950 1450,1550 1100,2160" fill="url(#polyPurple)"/>
             <polygon points="1100,2160 1450,1550 2650,1200 2900,2160" fill="#5a189a" opacity="0.65"/>
             <polygon points="1450,1550 2200,450 3200,950 2650,1200" fill="url(#polyGold)"/>
@@ -147,7 +141,6 @@ jobs:
       - name: 5. Gizlilik, Oyun (Steam/Epic) ve KDE Ayarlarini Entegre Et
         run: |
           cd /build/dehaos
-          # 3C: Firefox ESR uBlock Origin ve Sifir Telemetri Politikasi
           mkdir -p config/includes.chroot/etc/firefox-esr/policies
           cat << 'EOF' > config/includes.chroot/etc/firefox-esr/policies/policies.json
           {
@@ -172,7 +165,6 @@ jobs:
           }
           EOF
 
-          # 5B: Otomatik MAC Adresi Gizleme ve Quad9 Gizlilik DNS'i
           mkdir -p config/includes.chroot/etc/NetworkManager/conf.d
           cat << 'EOF' > config/includes.chroot/etc/NetworkManager/conf.d/90-dehaos-privacy.conf
           [device]
@@ -184,58 +176,36 @@ jobs:
           ipv6.ip6-privacy=2
           EOF
 
-          # Sistem Icerisinde Calisacak Otomatik Kurulum Kancasi (Hook)
           mkdir -p config/hooks/normal
           cat << 'EOF' > config/hooks/normal/9999-dehaos-setup.hook.chroot
           #!/bin/sh
-          set -e
-
-          # 2A: Backports Guncel Cekirdek Kurulumu (AMD Ryzen 7 Icin)
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y -t bookworm-backports linux-image-amd64 || true
-
-          # 6D: 32-bit Mimarisi, Steam ve Epic Games (Heroic Launcher)
-          dpkg --add-architecture i386
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            steam-installer mesa-vulkan-drivers:i386 libgl1-mesa-dri:i386 || true
-
-          # Stacer ve Heroic Games Launcher (Epic Games) .deb Kurulumu
+          dpkg --add-architecture i386 || true
+          apt-get update || true
+          DEBIAN_FRONTEND=noninteractive apt-get install -y steam-installer mesa-vulkan-drivers:i386 libgl1-mesa-dri:i386 || true
           DEBIAN_FRONTEND=noninteractive apt-get install -y stacer || true
           HEROIC_URL=$(curl -s https://api.github.com/repos/Heroic-Games-Launcher/HeroicGamesLauncher/releases/latest | grep "browser_download_url.*amd64.deb" | cut -d '"' -f 4 | head -n 1)
           if [ -n "$HEROIC_URL" ]; then
-            wget -q -O /tmp/heroic.deb "$HEROIC_URL"
+            wget -q -O /tmp/heroic.deb "$HEROIC_URL" || true
             DEBIAN_FRONTEND=noninteractive apt-get install -y /tmp/heroic.deb || true
             rm -f /tmp/heroic.deb
           fi
-
-          # 6A: Flathub Magaza Baglantisi
           flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo || true
-
-          # 5B: Guvenlik Duvarini (UFW) Varsayilan Olarak Etkinlestir
-          ufw default deny incoming || true
-          ufw default allow outgoing || true
-          ufw --force enable || true
-
-          # DehaOS Duvar Kagidini Varsayilan KDE Duvar Kagidi Yap
+          sed -i 's/ENABLED=no/ENABLED=yes/' /etc/ufw/ufw.conf || true
           if [ -f /usr/share/wallpapers/DehaOS/contents/images/3840x2160.png ]; then
             mkdir -p /usr/share/wallpapers/Next/contents/images
             cp -f /usr/share/wallpapers/DehaOS/contents/images/3840x2160.png /usr/share/wallpapers/Next/contents/images/5120x2880.png || true
             cp -f /usr/share/wallpapers/DehaOS/contents/images/3840x2160.png /usr/share/wallpapers/Next/contents/images/3840x2160.png || true
             cp -f /usr/share/wallpapers/DehaOS/contents/images/3840x2160.png /usr/share/wallpapers/Next/contents/images/1920x1080.png || true
           fi
-
-          # Masaustune Kurulum, Steam ve Epic Games Kisayollarini Ekle
           mkdir -p /etc/skel/Desktop
           for app in /usr/share/applications/calamares.desktop /usr/share/applications/steam.desktop /usr/share/applications/heroic.desktop; do
             if [ -f "$app" ]; then
-              cp "$app" /etc/skel/Desktop/
-              chmod +x /etc/skel/Desktop/*.desktop
+              cp "$app" /etc/skel/Desktop/ || true
+              chmod +x /etc/skel/Desktop/*.desktop || true
             fi
           done
-
-          # DehaOS Isimlendirme
           sed -i 's/PRETTY_NAME=.*/PRETTY_NAME="DehaOS 1.0 (Bookworm)"/' /etc/os-release || true
+          exit 0
           EOF
           chmod +x config/hooks/normal/9999-dehaos-setup.hook.chroot
 
@@ -243,7 +213,7 @@ jobs:
         run: |
           cd /build/dehaos
           lb build
-          mv live-image-amd64.hybrid.iso /build/DehaOS-amd64.iso
+          mv /build/dehaos/*.iso /build/DehaOS-amd64.iso
 
       - name: 7. Hazir ISO Dosyasini Indirmeye Sun
         uses: actions/upload-artifact@v4
